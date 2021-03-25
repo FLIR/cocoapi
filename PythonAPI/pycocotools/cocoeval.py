@@ -6,6 +6,7 @@ import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
+import mlflow
 
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
@@ -57,7 +58,7 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm'):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', use_mlflow=False):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -76,6 +77,7 @@ class COCOeval:
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
+        self.use_mlflow = use_mlflow        # use mlflow
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
@@ -424,12 +426,16 @@ class COCOeval:
         Compute and display summary metrics for evaluation results.
         Note this functin can *only* be applied on the default parameter setting
         '''
-        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
+        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100):
             p = self.params
             iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
+            pStr = ' {:<18} {} IoU {:<9} area {:>6s} maxDets {:>3d}'
             titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
             typeStr = '(AP)' if ap==1 else '(AR)'
+            p_typeStr = 'AP' if ap == 1 else 'AR'
             iouStr = '{:0.2f}:{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) \
+                if iouThr is None else '{:0.2f}'.format(iouThr)
+            p_iouStr = '{:0.2f}-{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) \
                 if iouThr is None else '{:0.2f}'.format(iouThr)
 
             aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
@@ -453,6 +459,9 @@ class COCOeval:
                 mean_s = -1
             else:
                 mean_s = np.mean(s[s>-1])
+            if self.use_mlflow:
+                print_str = pStr.format(titleStr, p_typeStr, p_iouStr, areaRng, maxDets)
+                mlflow.log_metric(print_str, float(mean_s))
             print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
             return mean_s
         def _summarizeDets():
